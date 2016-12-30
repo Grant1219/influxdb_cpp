@@ -1,7 +1,6 @@
 #include <iostream>
-#include <chrono>
 #include <thread>
-#include <client.hpp>
+#include <influxdb.hpp>
 
 int main(int argc, char** argv) {
     std::cout << "Initializing" << std::endl;
@@ -16,6 +15,10 @@ int main(int argc, char** argv) {
         client.add_metric(influxdb::metric("user_logins").add_field("count", 2));
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         client.add_metric(influxdb::metric("user_logins").add_field("count", 1));
+        std::string sentence = "The phrase \"Hello there!\" is a greeting.";
+        client.add_metric(influxdb::metric("string_test").add_field("value", sentence));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        client.add_metric(influxdb::metric("string_test").add_field("value", "This is a \"string literal\" for testing"));
 
         std::cout << "Writing metrics" << std::endl;
         client.write_metrics();
