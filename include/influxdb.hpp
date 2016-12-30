@@ -6,6 +6,7 @@
 #include <chrono>
 #include <regex>
 #include <algorithm>
+#include <exception>
 #include <curl/curl.h>
 #include <fmt/format.h>
 
@@ -110,13 +111,15 @@ namespace influxdb {
 
     class client {
         public:
-            client(std::string url, std::string db, precision p)
-                : base_url(url), database(db), ts_precision(p), running_handles(0) {
+            client(std::string url, std::string db, precision p, size_t buffer_size = 2048)
+                : base_url(url), database(db), ts_precision(p),
+                  max_buffer(buffer_size), running_handles(0) {
                 mhandle = curl_multi_init();
-                post_data.reserve(2048);
 
-                // TODO handle curl_multi_init failure
+                if (mhandle == nullptr)
+                    throw std::runtime_error("Failed to initialize curl multi interface");
 
+                post_data.reserve(max_buffer);
                 write_url = format_write_url(base_url, database);
             }
 
@@ -130,19 +133,21 @@ namespace influxdb {
 
                 rcode = curl_multi_perform(mhandle, &running_handles);
 
-                if (rcode != CURLM_OK) {
-                    // TODO check return code,
-                }
+                if (rcode != CURLM_OK)
+                    throw std::runtime_error(curl_multi_strerror(rcode));
 
-                if (prev_running_handles < running_handles) {
+                if (running_handles < prev_running_handles) {
                     // remove any completed transfers
-                    // TODO check for failures
-                    int msgq;
-                    cmsg = curl_multi_info_read(mhandle, &msgq);
-
+                    // and store errors
                     do {
+                        int msgq;
+                        cmsg = curl_multi_info_read(mhandle, &msgq);
+
                         if (cmsg != nullptr && (cmsg->msg == CURLMSG_DONE)) {
                             CURL* handle = cmsg->easy_handle;
+
+                            if (cmsg->data.result != CURLE_OK)
+                                failed_transfers.push_back(curl_easy_strerror(cmsg->data.result));
 
                             curl_multi_remove_handle(mhandle, handle);
                             curl_easy_cleanup(handle);
@@ -153,6 +158,9 @@ namespace influxdb {
 
             void add_metric(metric& m) {
                 post_data.append(m.get_line(ts_precision));
+
+                if (post_data.size() >= max_buffer)
+                    write_metrics();
             }
 
             void write_metrics() {
@@ -166,17 +174,21 @@ namespace influxdb {
                     running_handles++;
                     CURLMcode rcode = curl_multi_add_handle(mhandle, ehandle);
 
-                    if (rcode != CURLM_OK) {
-                        // TODO do something
-                    }
+                    if (rcode != CURLM_OK)
+                        throw std::runtime_error(curl_multi_strerror(rcode));
 
                     post_data.clear();
                 }
+                else
+                    throw std::runtime_error("Failed to initialize curl easy handle");
             }
 
             bool is_active() {
                 return running_handles > 0;
             }
+
+            const std::vector<std::string>& get_failures() { return failed_transfers; }
+            void clear_failures() { failed_transfers.clear(); }
 
         private:
             std::string format_write_url(const std::string& base_url, const std::string& db) {
@@ -217,7 +229,9 @@ namespace influxdb {
 
             CURLM* mhandle;
             CURLMsg* cmsg;
+            size_t max_buffer;
             std::string post_data;
+            std::vector<std::string> failed_transfers;
 
             int running_handles;
             int prev_running_handles;

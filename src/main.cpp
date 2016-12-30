@@ -19,6 +19,7 @@ int main(int argc, char** argv) {
         client.add_metric(influxdb::metric("string_test").add_field("value", sentence));
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         client.add_metric(influxdb::metric("string_test").add_field("value", "This is a \"string literal\" for testing"));
+        client.add_metric(influxdb::metric("bool_test").add_field("active", true));
 
         std::cout << "Writing metrics" << std::endl;
         client.write_metrics();
@@ -28,6 +29,11 @@ int main(int argc, char** argv) {
         }
 
         std::cout << "Finished writing" << std::endl;
+
+        for (const auto& str : client.get_failures()) {
+            std::cout << "Error: " << str << std::endl;
+        }
+        client.clear_failures();
     }
 
     std::cout << "Cleaning up" << std::endl;
