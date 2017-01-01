@@ -8,7 +8,11 @@
 #include <algorithm>
 #include <exception>
 #include <curl/curl.h>
-#include <fmt/format.h>
+
+#ifndef FMT_HEADER_ONLY
+#define FMT_HEADER_ONLY
+#endif
+#include "fmt/format.h"
 
 namespace influxdb {
     inline bool initialize() {
