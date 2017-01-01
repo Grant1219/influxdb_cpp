@@ -115,6 +115,8 @@ namespace influxdb {
 
     class client {
         public:
+            virtual ~client() {}
+
             virtual void update() {}
             virtual void add_metric(metric& m) {}
             virtual void write_metrics() {}
