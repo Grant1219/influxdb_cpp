@@ -7,7 +7,7 @@ int main(int argc, char** argv) {
     influxdb::initialize();
 
     {
-        auto client = influxdb::client("http://localhost:8086", "test_db", influxdb::precision::milli);
+        auto client = influxdb::influxdb_client("http://localhost:8086", "test_db", influxdb::precision::milli, 2048, true);
 
         std::cout << "Creating metrics" << std::endl;
         client.add_metric(influxdb::metric("user_logins").add_field("count", 1));

@@ -110,14 +110,26 @@ namespace influxdb {
             std::chrono::system_clock::time_point timestamp;
             std::regex quote_re;
 
-            friend class client;
+            friend class influxdb_client;
     };
 
     class client {
         public:
-            client(std::string url, std::string db, precision p, size_t buffer_size = 2048)
+            virtual void update() {}
+            virtual void add_metric(metric& m) {}
+            virtual void write_metrics() {}
+            virtual bool is_active() { return false; }
+    };
+
+    class dummy_client : public client {};
+
+    class influxdb_client : public client {
+        public:
+            influxdb_client(std::string url, std::string db, precision p,
+                            size_t buffer_size = 2048, bool save_failures = false)
                 : base_url(url), database(db), ts_precision(p),
-                  max_buffer(buffer_size), running_handles(0) {
+                  max_buffer(buffer_size), save_failures(save_failures),
+                  running_handles(0) {
                 mhandle = curl_multi_init();
 
                 if (mhandle == nullptr)
@@ -127,11 +139,11 @@ namespace influxdb {
                 write_url = format_write_url(base_url, database);
             }
 
-            ~client() {
+            ~influxdb_client() {
                 curl_multi_cleanup(mhandle);
             }
 
-            void update() {
+            void update() final override {
                 CURLMcode rcode;
                 prev_running_handles = running_handles;
 
@@ -150,7 +162,7 @@ namespace influxdb {
                         if (cmsg != nullptr && (cmsg->msg == CURLMSG_DONE)) {
                             CURL* handle = cmsg->easy_handle;
 
-                            if (cmsg->data.result != CURLE_OK)
+                            if (save_failures && cmsg->data.result != CURLE_OK)
                                 failed_transfers.push_back(curl_easy_strerror(cmsg->data.result));
 
                             curl_multi_remove_handle(mhandle, handle);
@@ -160,14 +172,14 @@ namespace influxdb {
                 }
             }
 
-            void add_metric(metric& m) {
+            void add_metric(metric& m) final override {
                 post_data.append(m.get_line(ts_precision));
 
                 if (post_data.size() >= max_buffer)
                     write_metrics();
             }
 
-            void write_metrics() {
+            void write_metrics() final override {
                 CURL* ehandle = curl_easy_init();
 
                 if (ehandle) {
@@ -187,7 +199,7 @@ namespace influxdb {
                     throw std::runtime_error("Failed to initialize curl easy handle");
             }
 
-            bool is_active() {
+            bool is_active() final override {
                 return running_handles > 0;
             }
 
@@ -236,6 +248,7 @@ namespace influxdb {
             size_t max_buffer;
             std::string post_data;
             std::vector<std::string> failed_transfers;
+            bool save_failures;
 
             int running_handles;
             int prev_running_handles;
